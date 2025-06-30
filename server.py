@@ -37,6 +37,8 @@ def get_tasks():
 @app.route('/tasks', methods=['POST'])
 def add_task():
     task = request.json
+    if not task:
+        return jsonify({"error": "Invalid JSON data"}), 400
     conn = sqlite3.connect('kanban.db')
     c = conn.cursor()
     c.execute('INSERT INTO tasks (id, title, priority, status) VALUES (?, ?, ?, ?)',
@@ -48,6 +50,8 @@ def add_task():
 @app.route('/tasks/<task_id>', methods=['PUT'])
 def update_task(task_id):
     task = request.json
+    if not task:
+        return jsonify({"error": "Invalid JSON data"}), 400
     conn = sqlite3.connect('kanban.db')
     c = conn.cursor()
     c.execute('UPDATE tasks SET status = ? WHERE id = ?',
