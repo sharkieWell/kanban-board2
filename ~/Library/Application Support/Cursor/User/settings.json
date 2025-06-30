@@ -1,0 +1,9 @@
+{
+    "window.commandCenter": true,
+    "github.gitAuthentication.useSystemGit": true,
+    "github.gitProtocol": "https",
+    "github.useSystemGit": true,
+    "github.useBrowserForGitAuth": true,
+    "github.experimental.useBrowserForGitAuth": true,
+    "open-in-browser.default": "Chrome"
+} 

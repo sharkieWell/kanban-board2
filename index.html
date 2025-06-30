@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Канбан Доска</title>
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://unpkg.com/react-beautiful-dnd@13.1.0/dist/react-beautiful-dnd.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            padding: 20px;
+        }
+
+        .board {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .column {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            min-width: 300px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .column-header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 16px;
+            color: #1a1a1a;
+        }
+
+        .task {
+            background: white;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        .task.high-priority {
+            border-left: 4px solid #dc3545;
+        }
+
+        .task.medium-priority {
+            border-left: 4px solid #ffc107;
+        }
+
+        .task.low-priority {
+            border-left: 4px solid #28a745;
+        }
+
+        .add-task-form {
+            margin-bottom: 20px;
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        input, select, button {
+            padding: 8px;
+            margin: 4px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            cursor: pointer;
+            padding: 8px 16px;
+        }
+
+        button:hover {
+            background: #0052a3;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+            color: #666;
+        }
+
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { DragDropContext, Droppable, Draggable } = window.ReactBeautifulDnd;
+
+        const API_URL = 'http://localhost:5000';
+
+        function KanbanBoard() {
+            const [tasks, setTasks] = useState([]);
+            const [newTaskTitle, setNewTaskTitle] = useState('');
+            const [newTaskPriority, setNewTaskPriority] = useState('medium');
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                fetchTasks();
+            }, []);
+
+            const fetchTasks = async () => {
+                try {
+                    const response = await fetch(`${API_URL}/tasks`);
+                    if (!response.ok) throw new Error('Ошибка загрузки задач');
+                    const data = await response.json();
+                    setTasks(data);
+                    setError(null);
+                } catch (err) {
+                    setError('Не удалось загрузить задачи. Убедитесь, что сервер запущен.');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const columns = {
+                'todo': {
+                    title: 'К выполнению',
+                    tasks: tasks.filter(task => task.status === 'todo')
+                },
+                'inProgress': {
+                    title: 'В процессе',
+                    tasks: tasks.filter(task => task.status === 'inProgress')
+                },
+                'done': {
+                    title: 'Выполнено',
+                    tasks: tasks.filter(task => task.status === 'done')
+                }
+            };
+
+            const addTask = async (e) => {
+                e.preventDefault();
+                if (!newTaskTitle.trim()) return;
+
+                const newTask = {
+                    id: Date.now().toString(),
+                    title: newTaskTitle,
+                    priority: newTaskPriority,
+                    status: 'todo'
+                };
+
+                try {
+                    const response = await fetch(`${API_URL}/tasks`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(newTask)
+                    });
+
+                    if (!response.ok) throw new Error('Ошибка при добавлении задачи');
+                    
+                    setTasks([...tasks, newTask]);
+                    setNewTaskTitle('');
+                    setNewTaskPriority('medium');
+                    setError(null);
+                } catch (err) {
+                    setError('Не удалось добавить задачу');
+                }
+            };
+
+            const handleDragEnd = async (result) => {
+                if (!result.destination) return;
+
+                const { draggableId, destination } = result;
+                const updatedTasks = [...tasks];
+                const movedTask = updatedTasks.find(task => task.id === draggableId);
+                
+                if (!movedTask) return;
+                
+                try {
+                    const response = await fetch(`${API_URL}/tasks/${draggableId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            ...movedTask,
+                            status: destination.droppableId
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('Ошибка при обновлении задачи');
+
+                    movedTask.status = destination.droppableId;
+                    setTasks(updatedTasks);
+                    setError(null);
+                } catch (err) {
+                    setError('Не удалось обновить статус задачи');
+                }
+            };
+
+            if (loading) {
+                return <div className="loading">Загрузка...</div>;
+            }
+
+            return (
+                <div>
+                    <h1>Канбан Доска</h1>
+                    
+                    {error && <div className="error">{error}</div>}
+
+                    <form className="add-task-form" onSubmit={addTask}>
+                        <input
+                            type="text"
+                            value={newTaskTitle}
+                            onChange={(e) => setNewTaskTitle(e.target.value)}
+                            placeholder="Название задачи"
+                        />
+                        <select
+                            value={newTaskPriority}
+                            onChange={(e) => setNewTaskPriority(e.target.value)}
+                        >
+                            <option value="low">Низкий приоритет</option>
+                            <option value="medium">Средний приоритет</option>
+                            <option value="high">Высокий приоритет</option>
+                        </select>
+                        <button type="submit">Добавить задачу</button>
+                    </form>
+
+                    <DragDropContext onDragEnd={handleDragEnd}>
+                        <div className="board">
+                            {Object.entries(columns).map(([columnId, column]) => (
+                                <Droppable droppableId={columnId} key={columnId}>
+                                    {(provided) => (
+                                        <div
+                                            className="column"
+                                            ref={provided.innerRef}
+                                            {...provided.droppableProps}
+                                        >
+                                            <h2 className="column-header">{column.title}</h2>
+                                            {column.tasks.map((task, index) => (
+                                                <Draggable
+                                                    key={task.id}
+                                                    draggableId={task.id}
+                                                    index={index}
+                                                >
+                                                    {(provided) => (
+                                                        <div
+                                                            className={`task ${task.priority}-priority`}
+                                                            ref={provided.innerRef}
+                                                            {...provided.draggableProps}
+                                                            {...provided.dragHandleProps}
+                                                        >
+                                                            {task.title}
+                                                        </div>
+                                                    )}
+                                                </Draggable>
+                                            ))}
+                                            {provided.placeholder}
+                                        </div>
+                                    )}
+                                </Droppable>
+                            ))}
+                        </div>
+                    </DragDropContext>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<KanbanBoard />, document.getElementById('root'));
+    </script>
+</body>
+</html> 
